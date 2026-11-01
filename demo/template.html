@@ -1,0 +1,397 @@
+<title>Vocoder in a Room</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: top-down room plan first (drag the voice and the listener), readouts under it, then voice, room and reverb controls. Sibling of the Dudley Vocoder and Ten Band EQ. */
+  :root {
+    --bg: #e9eef0; --panel: #f6f9fa; --ink: #13222b; --mute: #55666f; --line: #c3d0d6;
+    --accent: #0a5f86; --accent-ink: #ffffff; --lamp: #b25e00; --wall: #13222b; --floor: #eef3f5;
+    --f-display: "Barlow Condensed", "Arial Narrow", Impact, sans-serif;
+    --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #0d1519; --panel: #141f25; --ink: #dbe6ea; --mute: #8ea3ac; --line: #28383f;
+    --accent: #f0b447; --accent-ink: #1a1203; --lamp: #f0b447; --wall: #8ea3ac; --floor: #101a1f; color-scheme: dark; } }
+  :root[data-theme="dark"] {
+    --bg: #0d1519; --panel: #141f25; --ink: #dbe6ea; --mute: #8ea3ac; --line: #28383f;
+    --accent: #f0b447; --accent-ink: #1a1203; --lamp: #f0b447; --wall: #8ea3ac; --floor: #101a1f; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--f-body); padding-block: 20px 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
+  h1 { font: 700 clamp(34px, 7vw, 54px)/0.95 var(--f-display); letter-spacing: 0.01em; margin: 0; text-transform: uppercase; text-wrap: balance; }
+  h2 { font: 600 13px/1 var(--f-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute); margin: 0 0 12px; }
+  .sub { color: var(--mute); margin: 8px 0 0; max-width: 62ch; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px; min-width: 0; }
+  .scope { padding: 0; overflow: hidden; }
+  .scope-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; padding: 12px 16px; border-bottom: 1px solid var(--line); font: 12px var(--f-mono); color: var(--mute); }
+  .scope-head b { color: var(--ink); font-weight: 500; }
+  canvas { display: block; width: 100%; touch-action: none; cursor: grab; }
+  .read { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 20px; padding: 12px 16px; border-top: 1px solid var(--line); font: 12px var(--f-mono); color: var(--mute); }
+  .read b { display: block; font: 500 15px var(--f-mono); color: var(--ink); }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  button, select, input[type=file]::file-selector-button { font: 500 14px var(--f-body); border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 4px; padding: 9px 14px; cursor: pointer; }
+  button:hover, select:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button[aria-pressed=true] { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .tabs { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .tabs button { border: 0; border-radius: 0; background: transparent; }
+  .tabs button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); outline: 0; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px 24px; }
+  label.ctl, div.ctl { display: grid; gap: 4px; font-size: 13px; color: var(--mute); }
+  .ctl .v { font: 13px var(--f-mono); color: var(--ink); display: flex; justify-content: space-between; gap: 8px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .check { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--ink); }
+  .note { font-size: 12.5px; color: var(--mute); }
+  #status { font: 12px var(--f-mono); color: var(--mute); min-height: 18px; }
+  ul.cites { margin: 0; padding-left: 18px; display: grid; gap: 8px; font-size: 14px; }
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .two > div { min-width: 0; }
+  cite { font-style: normal; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<main>
+  <header>
+    <h1>Vocoder in a Room</h1>
+    <p class="sub">A Dudley-style vocoder voice placed in a simulated room. Drag the voice and the listener on the plan. Walls, absorption and distance set the echoes, the reverb tail and how much of the voice is direct sound.</p>
+  </header>
+
+  <section class="panel scope" aria-label="Room plan">
+    <div class="scope-head"><span><b id="hdRoom">12 × 16 × 6 m</b> &middot; <span id="hdRev">hall</span></span><span id="hdStatus">listener faces up</span></div>
+    <canvas id="cv" role="img" aria-label="Top-down room plan. Drag the voice marker or the listener marker."></canvas>
+    <div class="read" aria-live="off">
+      <span>Distance<b id="roDist">--</b></span>
+      <span>Azimuth<b id="roAz">--</b></span>
+      <span>Reverb time RT60<b id="roRt">--</b></span>
+      <span>Critical distance<b id="roDc">--</b></span>
+      <span>Direct vs reverb<b id="roDr">--</b></span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Transport</h2>
+    <div class="row">
+      <button id="play" class="primary">Play</button>
+      <button id="stop">Stop</button>
+      <!--DL--><button id="dl">Save WAV</button><!--/DL-->
+      <span id="status" role="status"></span>
+    </div>
+    <p class="note" style="margin:10px 0 0">Best on headphones. The listener hears the voice through a head-related transfer function (HRTF), so left and right matter.</p>
+  </section>
+
+  <section class="panel">
+    <h2>Voice</h2>
+    <div class="row" style="margin-bottom:14px">
+      <button id="sDemo" aria-pressed="true">Demo phrase</button>
+      <label class="row" style="gap:8px"><span class="note">Your speech</span><input id="file" type="file" accept="audio/*"></label>
+    </div>
+    <div class="row" style="margin-bottom:16px">
+      <div class="tabs" role="group" aria-label="Voice">
+        <button id="vDudley" aria-pressed="true">Dudley 1940</button>
+        <button id="vChord" aria-pressed="false">Modern chord</button>
+        <button id="vBuzz" aria-pressed="false">Modern buzz</button>
+        <button id="vDry" aria-pressed="false">No vocoder</button>
+      </div>
+    </div>
+    <div class="grid">
+      <label class="ctl"><span class="v"><span>Pitch shift</span><span id="vShift">0 st</span></span><input id="shift" type="range" min="-12" max="12" step="1" value="0"></label>
+      <div class="ctl"><label class="check"><input id="mono" type="checkbox"> Monotone buzz (robot)</label></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Room</h2>
+    <div class="grid">
+      <label class="ctl"><span class="v"><span>Width</span><span id="vW">12 m</span></span><input id="W" type="range" min="3" max="40" step="0.5" value="12"></label>
+      <label class="ctl"><span class="v"><span>Depth</span><span id="vD">16 m</span></span><input id="D" type="range" min="3" max="50" step="0.5" value="16"></label>
+      <label class="ctl"><span class="v"><span>Height</span><span id="vH">6 m</span></span><input id="H" type="range" min="2.2" max="20" step="0.1" value="6"></label>
+      <label class="ctl"><span class="v"><span>Wall absorption</span><span id="vA">25 %</span></span><input id="alpha" type="range" min="3" max="70" step="1" value="25"></label>
+      <label class="ctl"><span class="v"><span>Voice distance</span><span id="vDist">6 m</span></span><input id="dist" type="range" min="0.5" max="30" step="0.1" value="6"></label>
+      <label class="ctl"><span class="v"><span>Voice azimuth</span><span id="vAz">0 deg</span></span><input id="az" type="range" min="-170" max="170" step="1" value="0"></label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Reverb</h2>
+    <div class="row" style="margin-bottom:16px">
+      <div class="tabs" role="group" aria-label="Reverb">
+        <button id="rHall" aria-pressed="true">Hall</button>
+        <button id="rPlate" aria-pressed="false">Plate</button>
+        <button id="rOff" aria-pressed="false">Dry</button>
+      </div>
+      <span class="note" id="revNote">Image-source early reflections plus an 8-line feedback delay network, level set by the room.</span>
+    </div>
+    <div class="grid">
+      <label class="ctl"><span class="v"><span>Reverb level</span><span id="vMix">1.0</span></span><input id="mix" type="range" min="0" max="2" step="0.05" value="1"></label>
+      <label class="ctl" id="gDecay" hidden><span class="v"><span>Plate decay</span><span id="vDecay">0.62</span></span><input id="pdecay" type="range" min="0.1" max="0.95" step="0.01" value="0.62"></label>
+    </div>
+  </section>
+
+  <section class="panel two">
+    <div>
+      <h2>How it works</h2>
+      <p class="note" style="margin:0 0 8px">The vocoder renders first, so the machine voice is a normal mono recording. That recording goes through an HRTF panner for the direct sound, and into a shoebox-room model for reflections and the tail.</p>
+      <p class="note" style="margin:0">Direct level falls with distance (1/r). The diffuse tail stays the same level everywhere in the room, as in a real room. Where they are equal is the critical distance, drawn as the dashed circle.</p>
+    </div>
+    <div>
+      <h2>Checked and not checked</h2>
+      <p class="note" style="margin:0 0 8px">Measured in headless Chromium with an impulse and noise bursts: a farther voice has a lower direct-to-reverb ratio; an off-axis voice produces level and time differences between the ears; larger rooms give longer reverb times.</p>
+      <p class="note" style="margin:0">Not checked: how it sounds, and whether the crossover really sits at the drawn critical distance. The room is a plain box with one absorption value for every wall. Nobody has listened to this.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Sources</h2>
+    <ul class="cites">
+      <li><cite>Dudley, H. (1940). The carrier nature of speech. <i>Bell System Technical Journal</i>, 19(4), 495&ndash;515.</cite> Ten-band vocoder layout.</li>
+      <li><cite>Allen, J. B. &amp; Berkley, D. A. (1979). Image method for efficiently simulating small-room acoustics. <i>Journal of the Acoustical Society of America</i>, 65(4), 943&ndash;950.</cite> Method behind the early reflections.</li>
+      <li><cite>Kuttruff, H. <i>Room Acoustics</i> (Eyring reverberation time, diffuse-field level, critical distance).</cite> Textbook formulas, used from memory of the standard forms; edition not checked.</li>
+      <li><cite>Jot, J.-M. &amp; Chaigne, A. (1991). Digital delay networks for designing artificial reverberators. 90th AES Convention.</cite> Feedback delay network family used for the tail.</li>
+      <li><cite>W3C Web Audio API: PannerNode with the &ldquo;HRTF&rdquo; panning model.</cite> The browser's built-in head model; the exact HRTF data is the browser's.</li>
+    </ul>
+    <p class="note" style="margin:12px 0 0">A re-creation from published descriptions, not a measurement of any real room. Citations marked "from memory" were not looked up in this session.</p>
+  </section>
+</main>
+
+<script type="text/plain" id="worklet-src">/*WORKLET*/</script>
+<script>
+/*CORE*/
+</script>
+<script>
+/*ENGINE*/
+</script>
+<script>
+(function () {
+  "use strict";
+  const C = VocoderCore, E = VocoderEngine, RATE = E.SR;
+  const $ = (id) => document.getElementById(id);
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  const S = { W: 12, D: 16, H: 6, alpha: 0.25, sx: 6, sy: 10, lx: 6, ly: 13.5 - 0.5, rev: "hall", mix: 1, damp: 0.25, early: 1, roll: 1, pdecay: 0.62, pdamp: 0.3, ppre: 12,
+    voice: "dudley", semis: 0, mono: false, src: null, srcKind: "demo", pitch: null, out: null, token: 0 };
+  S.sy = 7; // 6 m in front of the listener
+
+  // ---------- room maths (same formulas as the reverb worklet) ----------
+  function roomStats(W, D, H, alpha) {
+    const V = W * D * H, A = 2 * (W * D + W * H + D * H), al = clamp(alpha, 0.02, 0.97);
+    const rt = clamp((-0.161 * V) / (A * Math.log(1 - al)), 0.15, 12);
+    return { V, rt, dc: 0.057 * Math.sqrt(V / rt) };
+  }
+  function plateTail(decay) {
+    const pts = [[0.1, 0.6], [0.4, 1.4], [0.62, 2.4], [0.85, 6.6], [0.95, 14]]; let t = pts[pts.length - 1][1];
+    for (let i = 1; i < pts.length; i++) if (decay <= pts[i][0]) { const a = pts[i - 1], b = pts[i]; t = a[1] + (b[1] - a[1]) * (decay - a[0]) / (b[0] - a[0]); break; }
+    return t;
+  }
+  function plateScale(decay) {
+    const pts = [[0.1, 1.2], [0.4, 1.93], [0.62, 2.45], [0.85, 4.06], [0.97, 9]]; let e = pts[pts.length - 1][1];
+    for (let i = 1; i < pts.length; i++) if (decay <= pts[i][0]) { const a = pts[i - 1], b = pts[i]; e = a[1] + (b[1] - a[1]) * (decay - a[0]) / (b[0] - a[0]); break; }
+    return e;
+  }
+  const earZ = () => Math.min(1.5, S.H * 0.55);
+  function sceneNow() { return { W: S.W, D: S.D, H: S.H, alpha: S.alpha, sx: S.sx, sy: S.sy, lx: S.lx, ly: S.ly, rev: S.rev, mix: S.mix, damp: S.damp, early: S.early, roll: S.roll, pdecay: S.pdecay, pdamp: S.pdamp, ppre: S.ppre }; }
+  function polar() { const dx = S.sx - S.lx, dy = S.sy - S.ly; return { dist: Math.hypot(dx, dy), az: (Math.atan2(dx, -dy) * 180) / Math.PI }; }
+  function clampPos() {
+    S.sx = clamp(S.sx, 0.3, S.W - 0.3); S.sy = clamp(S.sy, 0.3, S.D - 0.3); S.lx = clamp(S.lx, 0.3, S.W - 0.3); S.ly = clamp(S.ly, 0.3, S.D - 0.3);
+  }
+
+  // ---------- room render (offline, stereo) ----------
+  function loadModule(oc) {
+    const src = $("worklet-src").textContent;
+    const url = URL.createObjectURL(new Blob([src], { type: "application/javascript" }));
+    const dataUrl = "data:application/javascript;base64," + btoa(unescape(encodeURIComponent(src)));
+    return oc.audioWorklet.addModule(url).catch(() => oc.audioWorklet.addModule(dataUrl)).then(() => URL.revokeObjectURL(url));
+  }
+  /** Mono AudioBuffer in, stereo Float32 out. No normalization. */
+  async function renderRoom(voice, sc) {
+    const rs = roomStats(sc.W, sc.D, sc.H, sc.alpha);
+    const tail = clamp((sc.rev === "off" ? 0.2 : sc.rev === "plate" ? plateTail(sc.pdecay) + sc.ppre / 1000 : rs.rt + 0.4) + 0.3, 0.2, 15);
+    const len = Math.ceil((voice.duration + tail) * RATE), oc = new OfflineAudioContext(2, len, RATE);
+    const z = Math.min(1.5, sc.H * 0.55), dx = sc.sx - sc.lx, dy = sc.sy - sc.ly, dist = Math.hypot(dx, dy);
+    await loadModule(oc);
+    const master = oc.createGain(); master.connect(oc.destination);
+    const src = oc.createBufferSource(); src.buffer = voice;
+    const air = oc.createBiquadFilter(); air.type = "lowpass"; air.Q.value = 0.5; air.frequency.value = clamp(16000 / (1 + 0.09 * dist), 2800, 16000);
+    const pan = oc.createPanner(); pan.panningModel = "HRTF"; pan.distanceModel = "inverse"; pan.refDistance = 1; pan.rolloffFactor = sc.roll; pan.maxDistance = 1000;
+    pan.positionX.value = dx; pan.positionY.value = 0; pan.positionZ.value = dy; // listener faces up the plan (-y), so z = dy and a smaller y is in front
+    src.connect(air); air.connect(pan); pan.connect(master);
+    if (sc.rev === "hall") {
+      const hall = new AudioWorkletNode(oc, "hall-reverb", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 1, channelCountMode: "explicit",
+        processorOptions: { geom: { snap: true, W: sc.W, D: sc.D, H: sc.H, alpha: sc.alpha, sx: sc.sx, sy: sc.sy, sz: z, lx: sc.lx, ly: sc.ly, lz: z }, damp: sc.damp, er: sc.early, tail: 1 } });
+      const hw = oc.createGain(); hw.gain.value = sc.mix; src.connect(hall); hall.connect(hw); hw.connect(master);
+    } else if (sc.rev === "plate") {
+      const plate = new AudioWorkletNode(oc, "plate-reverb", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 1, channelCountMode: "explicit",
+        processorOptions: { decay: sc.pdecay, damp: sc.pdamp, predelay: sc.ppre } });
+      const pw = oc.createGain(); pw.gain.value = sc.mix * plateScale(sc.pdecay); src.connect(plate); plate.connect(pw); pw.connect(master);
+    }
+    src.start(0);
+    const r = await oc.startRendering();
+    return { L: new Float32Array(r.getChannelData(0)), R: new Float32Array(r.getChannelData(1)), rate: RATE };
+  }
+
+  // ---------- voice ----------
+  function voiceCfg() {
+    const d = S.voice === "dudley";
+    const bands = d ? C.dudleyBands() : C.erbBands(24, 90, 7800);
+    return { mode: d ? "dudley" : "modern", bands, qScale: d ? 1 : 1.1, envCut: d ? 25 : 50, carrier: d ? "buzz" : S.voice === "chord" ? "chord" : "buzz", hard: d,
+      semis: S.semis, monotone: S.mono, monoHz: 110, chordRoot: 130.81, chordType: "minor7", hissLevel: d ? 1 : 0.6, sibilance: d ? 0 : 0.4 };
+  }
+  async function makeVoice() {
+    if (S.voice === "dry") return S.src;
+    return E.render(S.src, S.pitch, voiceCfg());
+  }
+
+  // ---------- refresh ----------
+  const status = (t) => { $("status").textContent = t; };
+  async function refresh() {
+    if (!S.src) return;
+    const my = ++S.token, t0 = performance.now(); status("rendering...");
+    try {
+      const v = await makeVoice(); if (my !== S.token) return;
+      const room = await renderRoom(v, sceneNow()); if (my !== S.token) return;
+      let peak = 1e-9; for (let c = 0; c < 2; c++) { const a = c ? room.R : room.L; for (let i = 0; i < a.length; i++) { const m = Math.abs(a[i]); if (m > peak) peak = m; } }
+      const k = 0.89 / peak; for (let i = 0; i < room.L.length; i++) { room.L[i] *= k; room.R[i] *= k; }
+      S.out = room; status("rendered " + (room.L.length / RATE).toFixed(1) + " s in " + Math.round(performance.now() - t0) + " ms");
+      window.__ready = (window.__ready || 0) + 1;
+    } catch (e) { status("render failed: " + e.message); console.error(e); }
+  }
+  let timer = 0; const later = () => { clearTimeout(timer); timer = setTimeout(refresh, 350); };
+
+  // ---------- UI sync ----------
+  function sync() {
+    const rs = roomStats(S.W, S.D, S.H, S.alpha), p = polar();
+    $("vW").textContent = S.W + " m"; $("vD").textContent = S.D + " m"; $("vH").textContent = (+S.H).toFixed(1) + " m"; $("vA").textContent = Math.round(S.alpha * 100) + " %";
+    $("vDist").textContent = p.dist.toFixed(1) + " m"; $("vAz").textContent = Math.round(p.az) + " deg"; $("vMix").textContent = (+S.mix).toFixed(2); $("vDecay").textContent = (+S.pdecay).toFixed(2);
+    $("vShift").textContent = S.semis + " st";
+    $("hdRoom").textContent = S.W + " × " + S.D + " × " + (+S.H).toFixed(1) + " m"; $("hdRev").textContent = S.rev === "off" ? "dry" : S.rev;
+    $("roDist").textContent = p.dist.toFixed(1) + " m"; $("roAz").textContent = Math.round(p.az) + " deg";
+    $("roRt").textContent = S.rev === "plate" ? plateTail(S.pdecay).toFixed(1) + " s (plate)" : S.rev === "off" ? "none" : rs.rt.toFixed(2) + " s";
+    $("roDc").textContent = rs.dc.toFixed(1) + " m";
+    const dr = 20 * Math.log10(rs.dc / Math.max(p.dist, 0.1));
+    $("roDr").textContent = (S.rev === "hall" ? (dr >= 0 ? "+" : "−") + Math.abs(dr).toFixed(0) + " dB" : "hall estimate " + (dr >= 0 ? "+" : "−") + Math.abs(dr).toFixed(0) + " dB");
+    $("hdStatus").textContent = (S.rev === "hall" ? (dr >= 0 ? "direct sound dominates" : "reverberant field") : "listener faces up");
+    $("rHall").setAttribute("aria-pressed", S.rev === "hall"); $("rPlate").setAttribute("aria-pressed", S.rev === "plate"); $("rOff").setAttribute("aria-pressed", S.rev === "off");
+    ["Dudley", "Chord", "Buzz", "Dry"].forEach((n) => $("v" + n).setAttribute("aria-pressed", S.voice === n.toLowerCase()));
+    $("gDecay").hidden = S.rev !== "plate";
+    $("revNote").textContent = S.rev === "hall" ? "Image-source early reflections plus an 8-line feedback delay network, level set by the room." : S.rev === "plate" ? "Dattorro-style plate. Fixed level, so only the direct sound changes with distance." : "Direct sound only.";
+    draw();
+  }
+  function setSliders() { const p = polar(); $("dist").value = p.dist.toFixed(1); $("az").value = Math.round(p.az); }
+
+  // ---------- plan drawing and dragging ----------
+  const plan = { s: 1, ox: 0, oy: 0 };
+  function layout() {
+    const c = $("cv"), w = c.clientWidth, h = clamp(Math.round(w * (S.D / S.W) * 0.9), 240, 520);
+    c.style.height = h + "px";
+    const m = 28, s = Math.min((w - 2 * m) / S.W, (h - 2 * m) / S.D);
+    plan.s = s; plan.ox = (w - S.W * s) / 2; plan.oy = (h - S.D * s) / 2; plan.w = w; plan.h = h;
+  }
+  const X = (x) => plan.ox + x * plan.s, Y = (y) => plan.oy + y * plan.s;
+  function draw() {
+    const c = $("cv"); layout();
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (c.width !== Math.round(plan.w * dpr) || c.height !== Math.round(plan.h * dpr)) { c.width = Math.round(plan.w * dpr); c.height = Math.round(plan.h * dpr); }
+    const g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = css("--panel"); g.fillRect(0, 0, plan.w, plan.h);
+    g.fillStyle = css("--floor"); g.fillRect(X(0), Y(0), S.W * plan.s, S.D * plan.s);
+    g.strokeStyle = css("--line"); g.lineWidth = 1; g.fillStyle = css("--mute"); g.font = "11px " + css("--f-mono");
+    const step = S.W > 25 || S.D > 30 ? 5 : 2;
+    for (let x = step; x < S.W; x += step) { g.beginPath(); g.moveTo(X(x), Y(0)); g.lineTo(X(x), Y(S.D)); g.stroke(); }
+    for (let y = step; y < S.D; y += step) { g.beginPath(); g.moveTo(X(0), Y(y)); g.lineTo(X(S.W), Y(y)); g.stroke(); }
+    g.strokeStyle = css("--wall"); g.lineWidth = 3; g.strokeRect(X(0), Y(0), S.W * plan.s, S.D * plan.s);
+    g.fillStyle = css("--mute"); g.fillText(S.W + " m", X(S.W / 2) - 12, Y(0) - 8); g.save(); g.translate(X(0) - 10, Y(S.D / 2) + 14); g.rotate(-Math.PI / 2); g.fillText(S.D + " m", 0, 0); g.restore();
+    const rs = roomStats(S.W, S.D, S.H, S.alpha), acc = css("--accent"), ink = css("--ink");
+    // critical distance circle around the voice
+    g.save(); g.beginPath(); g.rect(X(0), Y(0), S.W * plan.s, S.D * plan.s); g.clip();
+    g.strokeStyle = acc; g.lineWidth = 1.5; g.setLineDash([5, 5]); g.beginPath(); g.arc(X(S.sx), Y(S.sy), rs.dc * plan.s, 0, Math.PI * 2); g.stroke(); g.setLineDash([]); g.restore();
+    // line between
+    g.strokeStyle = css("--mute"); g.lineWidth = 1; g.beginPath(); g.moveTo(X(S.sx), Y(S.sy)); g.lineTo(X(S.lx), Y(S.ly)); g.stroke();
+    // listener: ring with a nose pointing up
+    g.fillStyle = css("--panel"); g.strokeStyle = ink; g.lineWidth = 2.5; g.beginPath(); g.arc(X(S.lx), Y(S.ly), 11, 0, Math.PI * 2); g.fill(); g.stroke();
+    g.fillStyle = ink; g.beginPath(); g.moveTo(X(S.lx), Y(S.ly) - 19); g.lineTo(X(S.lx) - 6, Y(S.ly) - 9); g.lineTo(X(S.lx) + 6, Y(S.ly) - 9); g.closePath(); g.fill();
+    g.font = "600 11px " + css("--f-mono"); g.fillText("LISTENER", X(S.lx) + 16, Y(S.ly) + 4);
+    // voice
+    g.fillStyle = acc; g.beginPath(); g.arc(X(S.sx), Y(S.sy), 11, 0, Math.PI * 2); g.fill();
+    g.fillStyle = css("--accent-ink"); g.font = "700 12px " + css("--f-mono"); g.fillText("V", X(S.sx) - 4, Y(S.sy) + 4);
+    g.fillStyle = css("--mute"); g.font = "11px " + css("--f-mono"); g.fillText("critical distance " + rs.dc.toFixed(1) + " m", Math.max(plan.ox + 4, Math.min(X(S.sx) + 14, plan.ox + S.W * plan.s - 140)), Y(S.sy) - 16);
+  }
+  let drag = null;
+  function pt(e) { const r = $("cv").getBoundingClientRect(); return { px: e.clientX - r.left, py: e.clientY - r.top }; }
+  $("cv").addEventListener("pointerdown", (e) => {
+    const { px, py } = pt(e), ds = Math.hypot(px - X(S.sx), py - Y(S.sy)), dl = Math.hypot(px - X(S.lx), py - Y(S.ly));
+    if (Math.min(ds, dl) > 34) return;
+    drag = ds <= dl ? "s" : "l"; $("cv").setPointerCapture(e.pointerId); $("cv").style.cursor = "grabbing"; e.preventDefault();
+  });
+  $("cv").addEventListener("pointermove", (e) => {
+    if (!drag) return; const { px, py } = pt(e), x = (px - plan.ox) / plan.s, y = (py - plan.oy) / plan.s;
+    if (drag === "s") { S.sx = x; S.sy = y; } else { S.lx = x; S.ly = y; }
+    clampPos(); sync(); setSliders(); later();
+  });
+  ["pointerup", "pointercancel"].forEach((n) => $("cv").addEventListener(n, () => { drag = null; $("cv").style.cursor = "grab"; }));
+
+  // ---------- controls ----------
+  function polarSet() {
+    const d = +$("dist").value, a = (+$("az").value * Math.PI) / 180;
+    S.sx = S.lx + d * Math.sin(a); S.sy = S.ly - d * Math.cos(a); clampPos(); sync(); later();
+  }
+  $("dist").addEventListener("input", polarSet); $("az").addEventListener("input", polarSet);
+  ["W", "D", "H"].forEach((k) => $(k).addEventListener("input", () => { S[k] = +$(k).value; clampPos(); sync(); setSliders(); later(); }));
+  $("alpha").addEventListener("input", () => { S.alpha = +$("alpha").value / 100; sync(); later(); });
+  $("mix").addEventListener("input", () => { S.mix = +$("mix").value; sync(); later(); });
+  $("pdecay").addEventListener("input", () => { S.pdecay = +$("pdecay").value; sync(); later(); });
+  $("shift").addEventListener("input", () => { S.semis = +$("shift").value; sync(); later(); });
+  $("mono").addEventListener("input", () => { S.mono = $("mono").checked; later(); });
+  [["rHall", "hall"], ["rPlate", "plate"], ["rOff", "off"]].forEach(([id, v]) => ($(id).onclick = () => { S.rev = v; sync(); later(); }));
+  [["vDudley", "dudley"], ["vChord", "chord"], ["vBuzz", "buzz"], ["vDry", "dry"]].forEach(([id, v]) => ($(id).onclick = () => { S.voice = v; sync(); later(); }));
+
+  async function setSource(buf, kind) {
+    S.src = buf; S.srcKind = kind; S.pitch = C.trackPitch(buf.getChannelData(0), buf.sampleRate);
+    $("sDemo").setAttribute("aria-pressed", kind === "demo"); stop(); await refresh();
+  }
+  $("sDemo").onclick = async () => setSource(await E.demo(), "demo");
+  $("file").onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      let b = await new OfflineAudioContext(1, 1, RATE).decodeAudioData(await f.arrayBuffer());
+      const max = Math.floor(b.sampleRate * 20); if (b.length > max) { const nb = new AudioBuffer({ length: max, numberOfChannels: b.numberOfChannels, sampleRate: b.sampleRate }); for (let c = 0; c < b.numberOfChannels; c++) nb.copyToChannel(b.getChannelData(c).subarray(0, max), c); b = nb; }
+      await setSource(b, "file");
+    } catch (err) { status("Could not decode that file. Try wav or mp3."); }
+  };
+
+  // ---------- playback ----------
+  let ac = null, playing = null;
+  function stop() { if (playing) { try { playing.stop(); } catch (e) {} playing = null; } $("play").setAttribute("aria-pressed", "false"); }
+  async function play() {
+    stop();
+    try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); } catch (e) { status("Audio is not available here."); return; }
+    const waitFor = S.token; if (!S.out || timer) { clearTimeout(timer); timer = 0; await refresh(); }
+    if (!S.out) return;
+    const ab = ac.createBuffer(2, S.out.L.length, S.out.rate); ab.getChannelData(0).set(S.out.L); ab.getChannelData(1).set(S.out.R);
+    const s = ac.createBufferSource(); s.buffer = ab; s.connect(ac.destination); s.onended = () => { if (playing === s) stop(); }; s.start(); playing = s;
+    $("play").setAttribute("aria-pressed", "true");
+  }
+  $("play").onclick = play; $("stop").onclick = stop;
+  function wavStereo(L, R, sr) {
+    const n = L.length, buf = new ArrayBuffer(44 + n * 4), v = new DataView(buf), w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, "RIFF"); v.setUint32(4, 36 + n * 4, true); w(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 2, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 4, true); v.setUint16(32, 4, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, n * 4, true);
+    for (let i = 0; i < n; i++) { const a = clamp(L[i], -1, 1), b = clamp(R[i], -1, 1); v.setInt16(44 + i * 4, a < 0 ? a * 0x8000 : a * 0x7fff, true); v.setInt16(46 + i * 4, b < 0 ? b * 0x8000 : b * 0x7fff, true); }
+    return buf;
+  }
+  /*DL*/ if ($("dl")) $("dl").onclick = async () => {
+    if (timer) { clearTimeout(timer); timer = 0; await refresh(); } if (!S.out) return;
+    const url = URL.createObjectURL(new Blob([wavStereo(S.out.L, S.out.R, S.out.rate)], { type: "audio/wav" }));
+    const a = document.createElement("a"); a.href = url; a.download = "vocoder-in-a-room.wav"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }; /*/DL*/
+
+  window.addEventListener("resize", draw);
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+  new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  window.__vr = { S, C, E, renderRoom, sceneNow, roomStats, refresh, setSource, polar, ready: () => window.__ready || 0 };
+  sync(); setSliders();
+  (async () => { await setSource(await E.demo(), "demo"); })().catch((e) => status("start failed: " + e.message));
+})();
+</script>

@@ -1,3 +1,4 @@
+Copyright © 2026 Lewis James Seals Jr. All rights reserved. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 # Vocoder in a Room
 
 The Dudley-style vocoder voice (see the Dudley Vocoder package) placed in a simulated room. Open `index.html`.
